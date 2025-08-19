@@ -1,1 +1,13 @@
 node_modules
+
+node_modules
+.next
+dist
+out
+.vercel
+.prisma
+coverage
+*.log
+.env
+.env.local
+.env.*.local
