@@ -1,27 +1,59 @@
-import { NextResponse } from 'next/server'
-import Stripe from 'stripe'
+import { NextRequest, NextResponse } from 'next/server'
+import { createCheckoutSession } from '@/lib/stripe'
+import { getCurrentUser } from '@/lib/auth'
 
-export async function POST() {
-  const secretKey = process.env.STRIPE_SECRET_KEY
-  const priceId = process.env.STRIPE_PRICE_ID
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
-
-  if (secretKey && priceId) {
-    try {
-      const stripe = new Stripe(secretKey, { apiVersion: '2023-10-16' })
-      const session = await stripe.checkout.sessions.create({
-        mode: 'subscription',
-        line_items: [{ price: priceId, quantity: 1 }],
-        success_url: `${siteUrl}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${siteUrl}/billing/cancel`,
-        allow_promotion_codes: true,
-      })
-      return NextResponse.json({ url: session.url })
-    } catch (e) {
-      return NextResponse.json({ url: '/premium?success=1', note: 'stripe_error_fallback' })
+export async function POST(req: NextRequest) {
+  try {
+    const { priceId } = await req.json()
+    
+    // Validate price ID
+    if (!priceId) {
+      return NextResponse.json(
+        { error: 'Price ID is required' }, 
+        { status: 400 }
+      )
     }
-  }
 
-  // Fallback demo
-  return NextResponse.json({ url: '/premium?success=1', note: 'demo_fallback' })
+    // Check if Stripe is configured
+    if (!process.env.STRIPE_SECRET_KEY) {
+      return NextResponse.json(
+        { error: 'Stripe is not configured' }, 
+        { status: 500 }
+      )
+    }
+
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
+    
+    // Get current user for customer email
+    const user = await getCurrentUser()
+    
+    // Create checkout session
+    const session = await createCheckoutSession({
+      priceId,
+      successUrl: `${siteUrl}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancelUrl: `${siteUrl}/billing/cancel`,
+      customerEmail: user?.email,
+      metadata: {
+        userId: user?.id || 'anonymous'
+      }
+    })
+
+    return NextResponse.json({ url: session.url })
+
+  } catch (error) {
+    console.error('Checkout error:', error)
+    
+    // Fallback for demo mode
+    if (!process.env.STRIPE_SECRET_KEY) {
+      return NextResponse.json({ 
+        url: '/premium?success=1', 
+        note: 'demo_fallback' 
+      })
+    }
+    
+    return NextResponse.json(
+      { error: 'Failed to create checkout session' }, 
+      { status: 500 }
+    )
+  }
 }

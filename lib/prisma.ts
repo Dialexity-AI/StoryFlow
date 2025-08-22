@@ -1,9 +1,17 @@
-import { PrismaClient } from '@prisma/client'
+// Lazily require Prisma only when a database is configured.
+// This avoids build/runtime errors on environments without generated Prisma Client.
+type PrismaClientType = any
 
-const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient }
+let prismaInstance: PrismaClientType | null = null
 
-export const prisma = globalForPrisma.prisma || new PrismaClient({
-	log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error']
-})
+if (process.env.DATABASE_URL) {
+	// eslint-disable-next-line @typescript-eslint/no-var-requires
+	const { PrismaClient } = require('@prisma/client') as { PrismaClient: PrismaClientType }
+	const globalForPrisma = globalThis as unknown as { prisma?: PrismaClientType }
+	prismaInstance = globalForPrisma.prisma || new PrismaClient({
+		log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error']
+	})
+	if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prismaInstance
+}
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
+export const prisma = prismaInstance

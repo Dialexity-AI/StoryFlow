@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs'
 import jwt, { type Secret, type SignOptions } from 'jsonwebtoken'
 import { cookies } from 'next/headers'
+import { prisma } from './prisma'
 
 const JWT_SECRET: Secret = process.env.JWT_SECRET || 'dev_secret_change_me'
 const COOKIE_NAME = 'sf_token'
@@ -37,4 +38,110 @@ export function clearAuthCookie() {
 
 export function getTokenFromCookie(): string | null {
 	return cookies().get(COOKIE_NAME)?.value || null
+}
+
+// New utility functions for user management
+export async function getCurrentUser() {
+	const token = getTokenFromCookie()
+	if (!token) return null
+	
+	const payload = verifyJwt<{ uid: string; email: string }>(token)
+	if (!payload) return null
+	
+	try {
+		const user = await prisma.user.findUnique({
+			where: { id: payload.uid },
+			select: {
+				id: true,
+				email: true,
+				name: true,
+				premium: true,
+				stripeCustomerId: true,
+				createdAt: true
+			}
+		})
+		return user
+	} catch (error) {
+		console.error('Error fetching user:', error)
+		return null
+	}
+}
+
+export async function createUser(email: string, password: string, name?: string) {
+	try {
+		const passwordHash = await hashPassword(password)
+		const user = await prisma.user.create({
+			data: {
+				email,
+				name: name || '',
+				passwordHash
+			},
+			select: {
+				id: true,
+				email: true,
+				name: true,
+				premium: true,
+				createdAt: true
+			}
+		})
+		return user
+	} catch (error) {
+		console.error('Error creating user:', error)
+		throw error
+	}
+}
+
+export async function authenticateUser(email: string, password: string) {
+	try {
+		const user = await prisma.user.findUnique({
+			where: { email },
+			select: {
+				id: true,
+				email: true,
+				name: true,
+				premium: true,
+				passwordHash: true
+			}
+		})
+		
+		if (!user || !user.passwordHash) {
+			return null
+		}
+		
+		const isValid = await verifyPassword(password, user.passwordHash)
+		if (!isValid) {
+			return null
+		}
+		
+		const { passwordHash, ...userWithoutPassword } = user
+		return userWithoutPassword
+	} catch (error) {
+		console.error('Error authenticating user:', error)
+		return null
+	}
+}
+
+export async function updateUserPremiumStatus(userId: string, premium: boolean, stripeCustomerId?: string) {
+	try {
+		const updateData: any = { premium }
+		if (stripeCustomerId) {
+			updateData.stripeCustomerId = stripeCustomerId
+		}
+		
+		const user = await prisma.user.update({
+			where: { id: userId },
+			data: updateData,
+			select: {
+				id: true,
+				email: true,
+				name: true,
+				premium: true,
+				stripeCustomerId: true
+			}
+		})
+		return user
+	} catch (error) {
+		console.error('Error updating user premium status:', error)
+		throw error
+	}
 }
