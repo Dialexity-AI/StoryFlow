@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "next lint",
     "postinstall": "prisma generate",
+    "vercel-build": "npm run prisma:generate && npm run prisma:migrate:deploy && npm run build",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
     "prisma:migrate:dev": "prisma migrate dev --name init",
